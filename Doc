@@ -1,0 +1,258 @@
+Ver1.0 
+
+1) typedef and macro define 
+
+/*typedef*/
+//typedef
+typedef char	int8;
+typedef unsigned char 	uint8;
+
+
+typedef enum
+{
+	Bit_CLR = 0,
+	Bit_SET
+}BitAction;
+
+typedef struct 
+{
+    uint8	*tran_buff;
+    uint8	start;
+    uint8	end;
+}uart_t;//loop queue
+
+
+
+/*global var define*/
+//global var
+//adc
+uint8 __idata adc_value_H;
+uint8 __idata adc_value_L;
+uint8 __idata adc_value_char[4] = {0};
+
+//key
+uint8 __idata key_value;
+uint8 __xdata key_event;//When pull low the KEY_Xn, if KEY_Yn low too, key_event set, and then run into get key_value function.
+
+//long time loop var
+uint8 __xdata uc_conter = 0;
+uint8 __xdata wm_sta = 0;
+
+//chip id
+uint8 __idata hex_a;
+uint8 __idata hex_b;
+static __code uint8 chip_id_tial[7];
+
+//rfid
+uint8 __xdata ch_rssi[7];
+uint8 __xdata epc_data[16];
+
+//uart1,2 & timer0
+uint8 __xdata status;
+uint8 __xdata data_len;
+uint8 __xdata u1_busy;
+uint8 __xdata u2_busy;
+uint8 __xdata TimeOutCount1;
+
+uint8 __idata u1_tran_buff[DATA_BUFF_LEN];//for loop queue
+uint8 __xdata u1_data_buff[DATA_BUFF_LEN];//Normal array
+uint8 __idata u2_tran_buff[DATA_BUFF_LEN];//for loop queue
+uint8 __xdata u2_data_buff[DATA_BUFF_LEN];//normal array
+uint8 __xdata display_buff[DATA_BUFF_LEN];
+uint8 __xdata display_buff_tmp[DATA_BUFF_LEN];
+
+uart_t uart1_var;
+uart_t uart2_var;
+BitAction u1_rx_flag, u2_rx_flag;
+BitAction TimeOutFlag, Time1msFlag, Time25msFlag, DataSendingFlag, ConnectStatusFlag;
+
+
+
+//BT config cmd
+uint8 __xdata cmd0[] = {'A','T', 0x0d, 0x0a, '\0'};
+uint8 __xdata cmd01[] = {'A','T','+', 'R', 'E', 'S', 'T', 'O', 'R', 'E', 0x0d, 0x0a, '\0'};
+uint8 __xdata cmd1[] = {'A','T','+', 'A', 'D', 'D', 'R', '=', '0', '0', '0', '1', 0x0d, 0x0a, '\0'};//ADDR set
+uint8 __xdata cmd2[] = {'A','T','+', 'M', 'E', 'S', 'H', 'N', 'A', 'M', 'E', '=', 'B', 'T', '5', '.', '0', '_', 'M', 'E', 'S', 'H', 0x0d, 0x0a, '\0'};//mesh name
+uint8 __xdata cmd3[] = {'A','T','+', 'M', 'E', 'S', 'H', 'P', 'W', 'D', '=', 'B', 'T', '5', '.', '0', '_', 'M', 'E', 'S', 'H', 0x0d, 0x0a, '\0'};//mesh name
+uint8 __xdata cmd4[] = {'A','T','+', 'R', 'S', 'T', 0x0d, 0x0a, '\0'};//rst
+uint8 __xdata cmd_tx1[] = {'A','T','+','S','E','N','D','=','6','D',',','C',',','0','0','K','i','t','t','y','!','!','!', 0x0d, 0x0a, '\0'};
+
+
+
+
+
+
+2) library list
+
+
+
+delay.lib
+
+head file: 	“inc/delay.h”.
+Description: 	nop delay function.
+Function:	
+	void delay_xus(uint8 xus);
+	void delay_xms(uint8 xms);
+
+example:
+	delay_xus(255);
+	delay_xms(255);
+
+
+
+timer.lib
+
+head file: 	“inc/timer.h”.
+Description: 	Timer delay
+Function:	
+	//timer0 init
+	void timer0_init(void);
+
+	//25ms time conter
+	void SetTimeOut25ms(unsigned char TimeValue);
+
+	//1ms time conter
+	void SetTimeOut1ms(unsigned char TimeValue);
+
+	//10us time conter
+	void SetTimeOut10us(unsigned char TimeValue);
+	
+	//clear time out
+	void ClrTimeOut(void);
+
+example:
+	
+	ClrTimeOut();			//init the 25msflag, timeoutflag and stop the T0
+	SetTimeOut25ms(x);		//set 25msflag(run into isr’s 25ms delay branch), run T0
+	while(TimeOutFlag != Bit_SET);		//while loop, untill timeoutflag bit set
+	//note: T0 never be stopped, and T0_isr just do flag set or clear, inital at ClrTimeOut() function.
+	
+
+
+uart_v2.lib
+
+head file: 	“inc/uart.h”.
+Description: 	uart1, uart2, TX, RX full function library
+Function:	
+	//init
+	void uart1_init(void);
+	void uart2_init(void);
+
+	//push a data to tran_buff
+	uint8 push_a_uart_buff(uart_t *var, uint8 data);
+
+	//pop a data from tran_buff
+	uint8 pop_a_uart_buff(uart_t *var, uint8 *data);
+
+	//pop all tran_buff data to data_buff
+	uint8 pop_all_uart_buff(uart_t *var, uint8 *buff, uint8 *len);
+
+	//send a char to slave
+	void u1_SendToSlave(uint8 data);
+
+	//send package to slave
+	void u1_Send_package_ToSlave(uint8 *buff, uint8 cmd_len);
+
+	//send a char to slave
+	void u2_SendToSlave(uint8 data);
+
+	//send package to slave
+	void u2_Send_package_ToSlave(uint8 *buff, uint8 cmd_len);
+
+example:
+	
+	uint8 uart1_master_send(uint8 *string, uint8 string_len)
+	{
+		uint8 i;
+		uint8 data_len;
+		
+		for(i=0; i<DATA_BUFF_LEN; i++) {
+			u1_data_buff [i] = ‘\0’;
+		}
+
+		u1_Send_package_ToSlave(string, string_len);
+		delay_xms(xms);		// waiting for slave return, due to slave response timing.
+		
+		pop_all_uart_buif(&uart1_var,  u1_data_buff,  &data_len);
+		if(uart1_var.start != uart1_var.end)		//data or string return from slave
+		{
+			…… 		//do u1_data_buff[] and data_len process. 
+			return ok;
+		}
+		else return err;
+	}
+
+3) isr
+
+//interrupt server 
+void uart1_tr_isr(void) __interrupt (uart1_TR_VECTOR) __using (1)
+{
+	if(TI) {
+		TI = 0;
+		u1_busy = 0;
+		}
+	
+	if(RI) {
+		RI = 0;
+		push_a_uart_buff(&uart1_var, SBUF);
+		}
+}
+
+// timer1 interrupt
+void Timer0_isr(void) __interrupt (timer0_VECTOR) __using (2)
+{
+	TF0 = 0;
+	TR0 = 0;	//stop timer0
+	
+	if(Time1msFlag) {
+		
+		TL0 = (65536-922);
+		TH0 = (65536-922) >> 8;
+		
+		TR0 = 1;	//start timer0
+		
+		if(--TimeOutCount1==0)		//reduce time counter
+			TimeOutFlag = Bit_SET;	//time END
+			}
+	else if (Time25msFlag) {
+		
+		TL0 = (65536-23040);
+		TH0 = (65536-23040) >> 8;
+		
+		TR0 = 1;	//start timer0
+		
+		if(--TimeOutCount1==0)		//reduce time counter
+			TimeOutFlag = Bit_SET;	//time END
+			}
+	else {
+		
+		TL0 = (65536-9);
+		TH0 = (65536-9) >> 8;
+		
+		TR0 = 1;	//start timer0
+		
+		if(--TimeOutCount1==0)		//reduce time counter
+			TimeOutFlag = Bit_SET;	//time END
+		}
+}
+	
+
+
+4) makefile example
+
+#makefile
+	
+main.ihx: main.rel init.rel bt_config.rel
+        sdcc main.rel init.rel bt_config.rel delay.lib timer.lib uart.lib -L /home/wzqiu/Documents/sdcc_library --nogcse --noinvariant --noinduction --noloopreverse --nolabelopt --no-xinit-opt --nooverlay --no-peep
+        
+main.rel:
+        sdcc -c main.c delay.lib timer.lib uart.lib -L /home/wzqiu/Documents/sdcc_library --nogcse --noinvariant --noinduction --noloopreverse --nolabelopt --no-xinit-opt --nooverlay --no-peep
+        
+init.rel:
+        sdcc -c init.c delay.lib timer.lib uart.lib -L /home/wzqiu/Documents/sdcc_library --nogcse --noinvariant --noinduction --noloopreverse --nolabelopt --no-xinit-opt --nooverlay --no-peep
+        
+bt_config.rel:
+        sdcc -c bt_config.c delay.lib timer.lib uart.lib -L /home/wzqiu/Documents/sdcc_library --nogcse --noinvariant --noinduction --noloopreverse --nolabelopt --no-xinit-opt --nooverlay --no-peep
+        
+clean:
+        rm -f *.bin *.ihx *.rel *.asm *.lst *.rst *.sym *.mem *.map *.lk
