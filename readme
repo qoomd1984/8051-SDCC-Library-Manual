@@ -1,0 +1,9 @@
+Ver1.0
+
+uart.lib change to uart_v2.lib
+
+Busy change to u1_busy and u2_busy;
+uart1_tran_buff change to u1_tran_buff
+uart2_tran_buff change to u2_tran_buff
+data_u1_buff change to u1_data_buff
+data_u2_buff change to u2_data_buff
