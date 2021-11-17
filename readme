@@ -1,6 +1,10 @@
 Ver1.0
 
 uart.lib change to uart_v2.lib
+uart.lib for old MCU project
+New Create MCU project must use uart_v2.lib
+
+update history
 
 Busy change to u1_busy and u2_busy;
 uart1_tran_buff change to u1_tran_buff
